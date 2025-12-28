@@ -11,11 +11,16 @@ const tintColorDark = '#fff';
 export const Colors = {
   light: {
     text: '#11181C',
-    background: '#fff',
+    background: '#F2F4F7', // Slightly grey background for better card contrast
     tint: tintColorLight,
     icon: '#687076',
     tabIconDefault: '#687076',
     tabIconSelected: tintColorLight,
+    primary: '#4F46E5', // Indigo-600
+    success: '#10B981', // Emerald-500
+    danger: '#EF4444', // Red-500
+    card: '#FFFFFF',
+    border: '#E5E7EB',
   },
   dark: {
     text: '#ECEDEE',
@@ -24,6 +29,11 @@ export const Colors = {
     icon: '#9BA1A6',
     tabIconDefault: '#9BA1A6',
     tabIconSelected: tintColorDark,
+    primary: '#6366F1', // Indigo-500 (High contrast for dark mode)
+    success: '#34D399', // Emerald-400
+    danger: '#F87171', // Red-400
+    card: '#232526', // Slightly lighter than background
+    border: '#2D3033',
   },
 };
 
