@@ -1,27 +1,70 @@
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Ionicons } from '@expo/vector-icons';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { BarChart, PieChart } from "react-native-gifted-charts";
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTransactionStore } from '@/store/transactionStore';
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
 
 export default function ExploreScreen() {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
   const transactions = useTransactionStore((state) => state.transactions);
 
-  // Aggregate expenses by category
-  const categoryTotals = transactions
+  // --- PIE CHART DATA (Expense by Category) ---
+  const expenseCategoryTotals = transactions
     .filter(t => t.type === 'expense')
     .reduce((acc, t) => {
       acc[t.category] = (acc[t.category] || 0) + t.amount;
       return acc;
     }, {} as Record<string, number>);
 
-  const totalExpense = Object.values(categoryTotals).reduce((sum, val) => sum + val, 0);
+  const totalExpense = Object.values(expenseCategoryTotals).reduce((sum, val) => sum + val, 0);
 
-  const sortedCategories = Object.entries(categoryTotals)
+  // --- PIE CHART DATA (Income by Category) ---
+  const incomeCategoryTotals = transactions
+    .filter(t => t.type === 'income')
+    .reduce((acc, t) => {
+      acc[t.category] = (acc[t.category] || 0) + t.amount;
+      return acc;
+    }, {} as Record<string, number>);
+
+  const totalIncome = Object.values(incomeCategoryTotals).reduce((sum, val) => sum + val, 0);
+
+  const chartColors = [
+    '#6366F1', '#EC4899', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#F43F5E'
+  ];
+
+  const expensePieData = Object.entries(expenseCategoryTotals)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 5)
+    .map(([name, amount], index) => ({
+      value: amount,
+      color: chartColors[index % chartColors.length],
+      label: name,
+      text: `${((amount / totalExpense) * 100).toFixed(0)}%`
+    }));
+
+  const incomePieData = Object.entries(incomeCategoryTotals)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 5)
+    .map(([name, amount], index) => ({
+      value: amount,
+      color: chartColors[index % chartColors.length],
+      label: name,
+      text: `${((amount / totalIncome) * 100).toFixed(0)}%`
+    }));
+
+  // --- BAR CHART DATA (Income vs Expense) ---
+  const barData = [
+    { value: totalIncome, label: 'Income', frontColor: theme.success, spacing: 15 },
+    { value: totalExpense, label: 'Expense', frontColor: theme.danger },
+  ];
+
+  const sortedExpenseCategories = Object.entries(expenseCategoryTotals)
     .sort(([, a], [, b]) => b - a)
     .map(([name, amount]) => ({
       name,
@@ -29,38 +72,161 @@ export default function ExploreScreen() {
       percentage: totalExpense > 0 ? (amount / totalExpense) * 100 : 0
     }));
 
+  const sortedIncomeCategories = Object.entries(incomeCategoryTotals)
+    .sort(([, a], [, b]) => b - a)
+    .map(([name, amount]) => ({
+      name,
+      amount,
+      percentage: totalIncome > 0 ? (amount / totalIncome) * 100 : 0
+    }));
+
+  const renderLegend = (data: any[]) => {
+    return (
+      <View style={styles.legendContainer}>
+        {data.map((item, index) => (
+          <View key={index} style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: item.color }]} />
+            <Text style={[styles.legendText, { color: theme.text }]} numberOfLines={1}>{item.label}</Text>
+          </View>
+        ))}
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={[styles.title, { color: theme.text }]}>Analytics</Text>
 
-        {/* Placeholder Chart Area */}
-        <View style={[styles.chartCard, { backgroundColor: theme.card }]}>
-          <View style={styles.chartPlaceholder}>
-            <Ionicons name="bar-chart" size={64} color={theme.primary} />
-            <Text style={[styles.placeholderText, { color: theme.icon }]}>Spending Trends</Text>
-            <Text style={{ color: theme.text, marginTop: 8 }}>Total Expense: ${totalExpense.toFixed(2)}</Text>
+        {/* Bar Chart Section */}
+        <View style={[styles.card, { backgroundColor: theme.card }]}>
+          <Text style={[styles.cardTitle, { color: theme.text }]}>Income vs Expense</Text>
+          <View style={styles.chartWrapper}>
+            <BarChart
+              data={barData}
+              barWidth={45}
+              noOfSections={3}
+              barBorderRadius={8}
+              frontColor="lightgray"
+              yAxisThickness={0}
+              xAxisThickness={0}
+              hideRules
+              yAxisTextStyle={{ color: theme.icon, fontSize: 10 }}
+              xAxisLabelTextStyle={{ color: theme.text, fontSize: 12, fontWeight: '600' }}
+              isAnimated
+            />
           </View>
         </View>
 
-        <Text style={[styles.sectionTitle, { color: theme.text }]}>Spending by Category</Text>
+        {/* Expense Pie Chart Section */}
+        <View style={[styles.card, { backgroundColor: theme.card }]}>
+          <Text style={[styles.cardTitle, { color: theme.text }]}>Expense Breakdown</Text>
+          {expensePieData.length > 0 ? (
+            <View style={styles.pieWrapper}>
+              <PieChart
+                donut
+                sectionAutoFocus
+                radius={SCREEN_WIDTH * 0.22}
+                innerRadius={SCREEN_WIDTH * 0.12}
+                data={expensePieData}
+                centerLabelComponent={() => {
+                  return (
+                    <View style={{ justifyContent: 'center', alignItems: 'center' }}>
+                      <Text style={{ fontSize: 12, color: theme.icon }}>Total</Text>
+                      <Text style={{ fontSize: 16, color: theme.text, fontWeight: 'bold' }}>
+                        ${totalExpense > 1000 ? (totalExpense / 1000).toFixed(1) + 'k' : totalExpense.toFixed(0)}
+                      </Text>
+                    </View>
+                  );
+                }}
+              />
+              {renderLegend(expensePieData)}
+            </View>
+          ) : (
+            <View style={styles.emptyChart}>
+              <Ionicons name="pie-chart-outline" size={48} color={theme.icon} />
+              <Text style={{ color: theme.icon, marginTop: 8 }}>No expenses to display</Text>
+            </View>
+          )}
+        </View>
 
-        {sortedCategories.length === 0 ? (
-          <Text style={{ color: theme.text, opacity: 0.5 }}>No expenses yet.</Text>
+        {/* Income Pie Chart Section */}
+        <View style={[styles.card, { backgroundColor: theme.card }]}>
+          <Text style={[styles.cardTitle, { color: theme.text }]}>Income Sources</Text>
+          {incomePieData.length > 0 ? (
+            <View style={styles.pieWrapper}>
+              <PieChart
+                donut
+                sectionAutoFocus
+                radius={SCREEN_WIDTH * 0.22}
+                innerRadius={SCREEN_WIDTH * 0.12}
+                data={incomePieData}
+                centerLabelComponent={() => {
+                  return (
+                    <View style={{ justifyContent: 'center', alignItems: 'center' }}>
+                      <Text style={{ fontSize: 12, color: theme.icon }}>Total</Text>
+                      <Text style={{ fontSize: 16, color: theme.text, fontWeight: 'bold' }}>
+                        ${totalIncome > 1000 ? (totalIncome / 1000).toFixed(1) + 'k' : totalIncome.toFixed(0)}
+                      </Text>
+                    </View>
+                  );
+                }}
+              />
+              {renderLegend(incomePieData)}
+            </View>
+          ) : (
+            <View style={styles.emptyChart}>
+              <Ionicons name="pie-chart-outline" size={48} color={theme.icon} />
+              <Text style={{ color: theme.icon, marginTop: 8 }}>No income to display</Text>
+            </View>
+          )}
+        </View>
+
+        {/* ---------------- DETAILS SECTIONS ---------------- */}
+
+        {/* Expense Details */}
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>Spending Details</Text>
+        {sortedExpenseCategories.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="receipt-outline" size={48} color={theme.icon} />
+            <Text style={{ color: theme.text, opacity: 0.5, marginTop: 12 }}>No expenses found.</Text>
+          </View>
         ) : (
-          sortedCategories.map((cat) => (
+          sortedExpenseCategories.map((cat) => (
             <View key={cat.name} style={[styles.categoryItem, { backgroundColor: theme.card, borderColor: theme.border }]}>
               <View style={styles.categoryRow}>
                 <Text style={[styles.categoryName, { color: theme.text }]}>{cat.name}</Text>
                 <Text style={[styles.categoryAmount, { color: theme.text }]}>${cat.amount.toFixed(2)}</Text>
               </View>
               <View style={[styles.progressBarBg, { backgroundColor: theme.border }]}>
-                <View style={[styles.progressBarFill, { backgroundColor: theme.primary, width: `${cat.percentage}%` }]} />
+                <View style={[styles.progressBarFill, { backgroundColor: theme.danger, width: `${cat.percentage}%` }]} />
               </View>
             </View>
           ))
         )}
 
+        {/* Income Details */}
+        <Text style={[styles.sectionTitle, { color: theme.text, marginTop: 32 }]}>Income Details</Text>
+        {sortedIncomeCategories.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="cash-outline" size={48} color={theme.icon} />
+            <Text style={{ color: theme.text, opacity: 0.5, marginTop: 12 }}>No income found.</Text>
+          </View>
+        ) : (
+          sortedIncomeCategories.map((cat) => (
+            <View key={cat.name} style={[styles.categoryItem, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <View style={styles.categoryRow}>
+                <Text style={[styles.categoryName, { color: theme.text }]}>{cat.name}</Text>
+                <Text style={[styles.categoryAmount, { color: theme.success }]}>${cat.amount.toFixed(2)}</Text>
+              </View>
+              <View style={[styles.progressBarBg, { backgroundColor: theme.border }]}>
+                <View style={[styles.progressBarFill, { backgroundColor: theme.success, width: `${cat.percentage}%` }]} />
+              </View>
+            </View>
+          ))
+        )}
+
+        <View style={{ height: 40 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -78,28 +244,64 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 24,
   },
-  chartCard: {
-    height: 200,
-    borderRadius: 20,
-    marginBottom: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
+  card: {
+    padding: 20,
+    borderRadius: 24,
+    marginBottom: 20,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
     elevation: 3,
   },
-  chartPlaceholder: {
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 20,
+  },
+  chartWrapper: {
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingRight: 20,
+  },
+  pieWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  legendContainer: {
+    flex: 1,
+    marginLeft: 20,
     gap: 12,
   },
-  placeholderText: {
-    fontSize: 16,
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  legendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  legendText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  emptyChart: {
+    height: 150,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyState: {
+    alignItems: 'center',
+    marginTop: 20,
+    opacity: 0.6,
   },
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
+    marginTop: 12,
     marginBottom: 16,
   },
   categoryItem: {

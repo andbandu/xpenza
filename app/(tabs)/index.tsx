@@ -8,17 +8,20 @@ import { FlatList, Platform, Pressable, StyleSheet, Text, View } from 'react-nat
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTransactionStore } from '@/store/transactionStore';
+import { Swipeable } from 'react-native-gesture-handler';
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
   const transactions = useTransactionStore((state) => state.transactions);
-  const fetchTransactions = useTransactionStore((state) => state.fetchTransactions);
+  const deleteTransaction = useTransactionStore((state) => state.deleteTransaction);
+  const subscribeToTransactions = useTransactionStore((state) => state.subscribeToTransactions);
 
-  // Fetch transactions when component mounts
+  // Subscribe to transactions when component mounts
   useEffect(() => {
-    fetchTransactions();
-  }, []);
+    const unsubscribe = subscribeToTransactions();
+    return () => unsubscribe();
+  }, [subscribeToTransactions]);
 
   // Calculate Totals
   const totalIncome = transactions
@@ -31,71 +34,107 @@ export default function HomeScreen() {
 
   const totalBalance = totalIncome - totalExpense;
 
-  const renderHeader = () => (
-    <View style={styles.headerContainer}>
-      {/* Total Balance Card */}
-      <View style={[styles.balanceCard, { backgroundColor: theme.primary }]}>
-        <Text style={styles.balanceLabel}>Total Balance</Text>
-        <Text style={styles.balanceAmount}>${totalBalance.toFixed(2)}</Text>
-        <Text style={styles.balanceDate}>{new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</Text>
-      </View>
 
-      {/* Stats Row */}
-      <View style={styles.statsRow}>
-        <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <View style={[styles.iconContainer, { backgroundColor: theme.success + '20' }]}>
-            <Ionicons name="arrow-down" size={20} color={theme.success} />
-          </View>
-          <View>
-            <Text style={[styles.statLabel, { color: theme.text }]}>Income</Text>
-            <Text style={[styles.statAmount, { color: theme.success }]}>${totalIncome.toFixed(2)}</Text>
-          </View>
-        </View>
-        <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <View style={[styles.iconContainer, { backgroundColor: theme.danger + '20' }]}>
-            <Ionicons name="arrow-up" size={20} color={theme.danger} />
-          </View>
-          <View>
-            <Text style={[styles.statLabel, { color: theme.text }]}>Expense</Text>
-            <Text style={[styles.statAmount, { color: theme.danger }]}>${totalExpense.toFixed(2)}</Text>
-          </View>
-        </View>
-      </View>
 
-      <Text style={[styles.sectionTitle, { color: theme.text }]}>Recent Transactions</Text>
-    </View>
-  );
+  const renderLeftActions = (id: string) => {
+    return (
+      <Pressable
+        style={[styles.deleteAction, { backgroundColor: theme.danger }]}
+        onPress={() => deleteTransaction(id)}
+      >
+        <Ionicons name="trash-outline" size={24} color="#fff" />
+      </Pressable>
+    );
+  };
 
   const renderItem = ({ item }: { item: any }) => (
-    <View style={[styles.transactionItem, { backgroundColor: theme.card, borderColor: theme.border }]}>
-      <View style={styles.transactionLeft}>
-        <View style={[styles.categoryIcon, { backgroundColor: item.type === 'expense' ? theme.danger + '10' : theme.success + '10' }]}>
-          <Ionicons
-            name={item.category === 'Food' ? 'fast-food' : item.category === 'Transport' ? 'car' : item.category === 'Housing' ? 'home' : 'cash'}
-            size={20}
-            color={item.type === 'expense' ? theme.danger : theme.success}
-          />
-        </View>
-        <View>
-          <Text style={[styles.transactionTitle, { color: theme.text }]}>{item.title}</Text>
-          <Text style={styles.transactionDate}>{item.date}</Text>
-        </View>
-      </View>
-      <Text style={[styles.transactionAmount, { color: item.type === 'expense' ? theme.text : theme.success }]}>
-        {item.type === 'expense' ? '-' : '+'}${item.amount.toFixed(2)}
-      </Text>
-    </View>
+    <Swipeable
+      renderLeftActions={() => renderLeftActions(item.id)}
+      friction={2}
+      leftThreshold={40}
+      containerStyle={styles.swipeableContainer}
+    >
+      <Link href={`/modal?id=${item.id}`} asChild>
+        <Pressable>
+          <View style={[styles.transactionItem, { backgroundColor: theme.card, borderColor: theme.border, marginBottom: 0 }]}>
+            <View style={styles.transactionLeft}>
+              <View style={[styles.categoryIcon, { backgroundColor: item.type === 'expense' ? theme.danger + '10' : theme.success + '10' }]}>
+                <Ionicons
+                  name={item.category === 'Food' ? 'fast-food' : item.category === 'Transport' ? 'car' : item.category === 'Housing' ? 'home' : 'cash'}
+                  size={20}
+                  color={item.type === 'expense' ? theme.danger : theme.success}
+                />
+              </View>
+              <View>
+                <View style={styles.titleRow}>
+                  <Text style={[styles.transactionTitle, { color: theme.text }]}>{item.title}</Text>
+                  {item.isSyncing && (
+                    <Ionicons name="cloud-upload" size={14} color={theme.icon} style={styles.syncIcon} />
+                  )}
+                </View>
+                <Text style={styles.transactionDate}>{item.date}</Text>
+              </View>
+            </View>
+            <Text style={[styles.transactionAmount, { color: item.type === 'expense' ? theme.text : theme.success }]}>
+              {item.type === 'expense' ? '-' : '+'}${item.amount.toFixed(2)}
+            </Text>
+          </View>
+        </Pressable>
+      </Link>
+    </Swipeable>
   );
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+      {/* Fixed Header Section */}
+      <View style={styles.fixedHeader}>
+        {/* Total Balance Card */}
+        <View style={[styles.balanceCard, { backgroundColor: theme.primary }]}>
+          <Text style={styles.balanceLabel}>Total Balance</Text>
+          <Text style={styles.balanceAmount}>${totalBalance.toFixed(2)}</Text>
+          <View style={styles.balanceFooter}>
+            <Text style={styles.balanceDate}>{new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</Text>
+            {transactions.some(t => t.isSyncing) && (
+              <View style={styles.syncingBadge}>
+                <Ionicons name="sync" size={12} color="rgba(255,255,255,0.8)" />
+                <Text style={styles.syncingText}>Syncing...</Text>
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* Stats Row */}
+        <View style={styles.statsRow}>
+          <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <View style={[styles.iconContainer, { backgroundColor: theme.success + '20' }]}>
+              <Ionicons name="arrow-down" size={20} color={theme.success} />
+            </View>
+            <View>
+              <Text style={[styles.statLabel, { color: theme.text }]}>Income</Text>
+              <Text style={[styles.statAmount, { color: theme.success }]}>${totalIncome.toFixed(2)}</Text>
+            </View>
+          </View>
+          <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <View style={[styles.iconContainer, { backgroundColor: theme.danger + '20' }]}>
+              <Ionicons name="arrow-up" size={20} color={theme.danger} />
+            </View>
+            <View>
+              <Text style={[styles.statLabel, { color: theme.text }]}>Expense</Text>
+              <Text style={[styles.statAmount, { color: theme.danger }]}>${totalExpense.toFixed(2)}</Text>
+            </View>
+          </View>
+        </View>
+
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>Recent Transactions</Text>
+      </View>
+
+      {/* Scrollable Transactions List */}
       <FlatList
         data={transactions}
         renderItem={renderItem}
         keyExtractor={item => item.id}
-        ListHeaderComponent={renderHeader}
-        contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
-        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 100 }}
+        showsVerticalScrollIndicator={true}
       />
 
       <Link href="/modal" asChild>
@@ -120,8 +159,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  headerContainer: {
-    marginBottom: 20,
+  fixedHeader: {
+    padding: 20,
+    paddingBottom: 10,
   },
   balanceCard: {
     padding: 24,
@@ -145,9 +185,28 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 8,
   },
+  balanceFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   balanceDate: {
     color: 'rgba(255,255,255,0.6)',
     fontSize: 12,
+  },
+  syncingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  syncingText: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 10,
+    fontWeight: '600',
   },
   statsRow: {
     flexDirection: 'row',
@@ -187,8 +246,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     borderRadius: 16,
-    marginBottom: 12,
     borderWidth: 1,
+  },
+  swipeableContainer: {
+    marginBottom: 12,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  deleteAction: {
+    width: 80,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 16,
+    marginLeft: 12,
   },
   transactionLeft: {
     flexDirection: 'row',
@@ -202,14 +272,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   transactionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    marginBottom: 4,
+  },
+  syncIcon: {
+    opacity: 0.5,
   },
   transactionDate: {
     fontSize: 12,
     color: '#9BA1A6',
+    marginTop: 2,
   },
   transactionAmount: {
     fontSize: 16,
