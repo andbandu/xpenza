@@ -19,6 +19,10 @@ export default function ModalScreen() {
   const addCategory = useTransactionStore((state) => state.addCategory);
   const categories = useTransactionStore((state) => state.categories);
   const transactions = useTransactionStore((state) => state.transactions);
+  const activeLedgerId = useTransactionStore((state) => state.activeLedgerId);
+  const ledgers = useTransactionStore((state) => state.ledgers);
+
+  const activeLedger = ledgers.find(l => l.id === activeLedgerId);
 
   const [type, setType] = useState<'expense' | 'income'>('expense');
   const [amount, setAmount] = useState('');
@@ -79,11 +83,9 @@ export default function ModalScreen() {
       if (id) {
         // Update existing transaction
         await updateTransaction(id, transactionData);
-        console.log('Transaction updated successfully');
       } else {
         // Create new transaction
         await addTransaction(transactionData);
-        console.log('Transaction created successfully');
       }
 
       router.back();
@@ -141,6 +143,16 @@ export default function ModalScreen() {
             type === 'income' ? { color: '#fff' } : { color: theme.text }
           ]}>Income</Text>
         </Pressable>
+      </View>
+
+      {/* Book Indicator */}
+      <View style={styles.bookIndicator}>
+        <View style={[styles.bookBadge, { backgroundColor: (activeLedger?.color || theme.primary) + '20' }]}>
+          <Ionicons name="book" size={14} color={activeLedger?.color || theme.primary} />
+          <Text style={[styles.bookName, { color: theme.text }]}>
+            {activeLedger?.name || 'Main Book'}
+          </Text>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
@@ -233,7 +245,6 @@ export default function ModalScreen() {
             placeholderTextColor={theme.icon}
           />
         </View>
-
       </ScrollView>
 
       {/* Save & Delete Buttons */}
@@ -281,6 +292,23 @@ const styles = StyleSheet.create({
   typeText: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  bookIndicator: {
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  bookBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  bookName: {
+    fontSize: 12,
+    fontWeight: '700',
+    opacity: 0.8,
   },
   inputGroup: {
     marginBottom: 24,

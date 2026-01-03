@@ -1,27 +1,49 @@
+import LedgerSwitcher from '@/components/LedgerSwitcher';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useTransactionStore } from '@/store/transactionStore';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Link } from 'expo-router';
-import { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { FlatList, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-
-import { useTransactionStore } from '@/store/transactionStore';
 import { Swipeable } from 'react-native-gesture-handler';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
-  const transactions = useTransactionStore((state) => state.transactions);
-  const deleteTransaction = useTransactionStore((state) => state.deleteTransaction);
-  const subscribeToTransactions = useTransactionStore((state) => state.subscribeToTransactions);
 
-  // Subscribe to transactions when component mounts
+  const {
+    transactions,
+    deleteTransaction,
+    subscribeToTransactions,
+    ledgers,
+    activeLedgerId,
+    subscribeToLedgers,
+    fetchLedgers
+  } = useTransactionStore();
+
+  const [ledgerModalVisible, setLedgerModalVisible] = useState(false);
+
+  // Initial fetch and subscriptions
   useEffect(() => {
-    const unsubscribe = subscribeToTransactions();
-    return () => unsubscribe();
-  }, [subscribeToTransactions]);
+    fetchLedgers();
+    const unsubscribeLedgers = subscribeToLedgers();
+    return () => {
+      unsubscribeLedgers();
+    };
+  }, []);
+
+  // Update transaction subscription when active ledger changes
+  useEffect(() => {
+    if (activeLedgerId) {
+      const unsubscribe = subscribeToTransactions();
+      return () => unsubscribe();
+    }
+  }, [activeLedgerId]);
+
+  const activeLedger = ledgers.find(l => l.id === activeLedgerId);
 
   // Calculate Totals
   const totalIncome = transactions
@@ -33,8 +55,6 @@ export default function HomeScreen() {
     .reduce((acc, t) => acc + t.amount, 0);
 
   const totalBalance = totalIncome - totalExpense;
-
-
 
   const renderLeftActions = (id: string) => {
     return (
@@ -60,7 +80,7 @@ export default function HomeScreen() {
             <View style={styles.transactionLeft}>
               <View style={[styles.categoryIcon, { backgroundColor: item.type === 'expense' ? theme.danger + '10' : theme.success + '10' }]}>
                 <Ionicons
-                  name={item.category === 'Food' ? 'fast-food' : item.category === 'Transport' ? 'car' : item.category === 'Housing' ? 'home' : 'cash'}
+                  name={item.type === 'income' ? 'arrow-down' : 'arrow-up'}
                   size={20}
                   color={item.type === 'expense' ? theme.danger : theme.success}
                 />
@@ -72,7 +92,7 @@ export default function HomeScreen() {
                     <Ionicons name="cloud-upload" size={14} color={theme.icon} style={styles.syncIcon} />
                   )}
                 </View>
-                <Text style={styles.transactionDate}>{item.date}</Text>
+                <Text style={styles.transactionDate}>{item.category} • {item.date}</Text>
               </View>
             </View>
             <Text style={[styles.transactionAmount, { color: item.type === 'expense' ? theme.text : theme.success }]}>
@@ -86,8 +106,31 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Fixed Header Section */}
+      <LedgerSwitcher
+        visible={ledgerModalVisible}
+        onClose={() => setLedgerModalVisible(false)}
+      />
+
       <View style={styles.fixedHeader}>
+        {/* Ledger Selector Header */}
+        <View style={styles.topHeader}>
+          <Pressable
+            style={styles.ledgerSelector}
+            onPress={() => setLedgerModalVisible(true)}
+          >
+            <View style={[styles.ledgerBadge, { backgroundColor: (activeLedger?.color || theme.primary) + '20' }]}>
+              <Ionicons name="book" size={16} color={activeLedger?.color || theme.primary} />
+            </View>
+            <Text style={[styles.ledgerName, { color: theme.text }]}>
+              {activeLedger?.name || 'Loading...'}
+            </Text>
+            <Ionicons name="chevron-down" size={16} color={theme.icon} />
+          </Pressable>
+          <Pressable style={[styles.profileButton, { backgroundColor: theme.card }]}>
+            <Ionicons name="person" size={24} color={theme.primary} />
+          </Pressable>
+        </View>
+
         {/* Total Balance Card */}
         <View style={[styles.balanceCard, { backgroundColor: theme.primary }]}>
           <Text style={styles.balanceLabel}>Total Balance</Text>
@@ -134,7 +177,15 @@ export default function HomeScreen() {
         renderItem={renderItem}
         keyExtractor={item => item.id}
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 100 }}
-        showsVerticalScrollIndicator={true}
+        showsVerticalScrollIndicator={false}
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Ionicons name="receipt-outline" size={64} color={theme.icon} />
+            <Text style={[styles.emptyStateText, { color: theme.icon }]}>
+              No transactions in this book yet.
+            </Text>
+          </View>
+        }
       />
 
       <Link href="/modal" asChild>
@@ -162,6 +213,39 @@ const styles = StyleSheet.create({
   fixedHeader: {
     padding: 20,
     paddingBottom: 10,
+  },
+  topHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  ledgerSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    paddingHorizontal: 0,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  ledgerBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  ledgerName: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  profileButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   balanceCard: {
     padding: 24,
@@ -303,7 +387,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 12,
     elevation: 8,
-    borderRadius: 35, // Match closest to FAB radius for shadow
+    borderRadius: 35,
   },
   fab: {
     width: 70,
@@ -313,5 +397,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 60,
+  },
+  emptyStateText: {
+    marginTop: 16,
+    fontSize: 16,
+    opacity: 0.6,
   },
 });

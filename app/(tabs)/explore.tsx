@@ -1,6 +1,7 @@
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Ionicons } from '@expo/vector-icons';
+import { useEffect } from 'react';
 import { Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { BarChart, PieChart } from "react-native-gifted-charts";
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -12,7 +13,29 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 export default function ExploreScreen() {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
-  const transactions = useTransactionStore((state) => state.transactions);
+  const {
+    transactions,
+    activeLedgerId,
+    ledgers,
+    fetchLedgers,
+    subscribeToLedgers,
+    subscribeToTransactions
+  } = useTransactionStore();
+
+  useEffect(() => {
+    fetchLedgers();
+    const unsubscribeLedgers = subscribeToLedgers();
+    return () => unsubscribeLedgers();
+  }, []);
+
+  useEffect(() => {
+    if (activeLedgerId) {
+      const unsubscribeTx = subscribeToTransactions();
+      return () => unsubscribeTx();
+    }
+  }, [activeLedgerId]);
+
+  const activeLedger = ledgers.find(l => l.id === activeLedgerId);
 
   // --- PIE CHART DATA (Expense by Category) ---
   const expenseCategoryTotals = transactions
@@ -96,7 +119,17 @@ export default function ExploreScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={[styles.title, { color: theme.text }]}>Analytics</Text>
+        <View style={styles.header}>
+          <View>
+            <Text style={[styles.title, { color: theme.text }]}>Analytics</Text>
+            <Text style={[styles.subtitle, { color: theme.icon }]}>
+              {activeLedger?.name || 'Loading...'}
+            </Text>
+          </View>
+          <View style={[styles.bookIcon, { backgroundColor: (activeLedger?.color || theme.primary) + '20' }]}>
+            <Ionicons name="stats-chart" size={24} color={activeLedger?.color || theme.primary} />
+          </View>
+        </View>
 
         {/* Bar Chart Section */}
         <View style={[styles.card, { backgroundColor: theme.card }]}>
@@ -242,7 +275,24 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: 'bold',
+  },
+  subtitle: {
+    fontSize: 16,
+    fontWeight: '500',
+    marginTop: 4,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 24,
+  },
+  bookIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   card: {
     padding: 20,
