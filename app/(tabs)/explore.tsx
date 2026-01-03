@@ -1,5 +1,6 @@
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useSettingsStore } from '@/store/settingsStore';
 import { useTransactionStore } from '@/store/transactionStore';
 import { generateCSV, generatePDF } from '@/utils/exportUtils';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +22,8 @@ export default function ExploreScreen() {
     subscribeToLedgers,
     subscribeToTransactions
   } = useTransactionStore();
+
+  const { currency } = useSettingsStore();
 
   const [isExportingPDF, setIsExportingPDF] = useState(false);
   const [isExportingCSV, setIsExportingCSV] = useState(false);
@@ -44,7 +47,7 @@ export default function ExploreScreen() {
     if (!activeLedger) return;
     setIsExportingPDF(true);
     try {
-      await generatePDF(activeLedger, transactions);
+      await generatePDF(activeLedger, transactions, currency.symbol);
     } catch (error) {
       Alert.alert('Error', 'Failed to generate PDF report.');
     } finally {
@@ -56,7 +59,7 @@ export default function ExploreScreen() {
     if (!activeLedger) return;
     setIsExportingCSV(true);
     try {
-      await generateCSV(activeLedger, transactions);
+      await generateCSV(activeLedger, transactions, currency.symbol);
     } catch (error) {
       Alert.alert('Error', 'Failed to generate CSV report.');
     } finally {
@@ -194,7 +197,7 @@ export default function ExploreScreen() {
                     <View style={{ justifyContent: 'center', alignItems: 'center' }}>
                       <Text style={{ fontSize: 12, color: theme.icon }}>Total</Text>
                       <Text style={{ fontSize: 16, color: theme.text, fontWeight: 'bold' }}>
-                        ${totalExpense > 1000 ? (totalExpense / 1000).toFixed(1) + 'k' : totalExpense.toFixed(0)}
+                        {currency.symbol} {totalExpense > 1000 ? (totalExpense / 1000).toFixed(1) + 'k' : totalExpense.toLocaleString()}
                       </Text>
                     </View>
                   );
@@ -226,7 +229,7 @@ export default function ExploreScreen() {
                     <View style={{ justifyContent: 'center', alignItems: 'center' }}>
                       <Text style={{ fontSize: 12, color: theme.icon }}>Total</Text>
                       <Text style={{ fontSize: 16, color: theme.text, fontWeight: 'bold' }}>
-                        ${totalIncome > 1000 ? (totalIncome / 1000).toFixed(1) + 'k' : totalIncome.toFixed(0)}
+                        {currency.symbol} {totalIncome > 1000 ? (totalIncome / 1000).toFixed(1) + 'k' : totalIncome.toLocaleString()}
                       </Text>
                     </View>
                   );
@@ -256,7 +259,7 @@ export default function ExploreScreen() {
             <View key={cat.name} style={[styles.categoryItem, { backgroundColor: theme.card, borderColor: theme.border }]}>
               <View style={styles.categoryRow}>
                 <Text style={[styles.categoryName, { color: theme.text }]}>{cat.name}</Text>
-                <Text style={[styles.categoryAmount, { color: theme.text }]}>${cat.amount.toFixed(2)}</Text>
+                <Text style={[styles.categoryAmount, { color: theme.text }]}>{currency.symbol} {cat.amount.toLocaleString()}</Text>
               </View>
               <View style={[styles.progressBarBg, { backgroundColor: theme.border }]}>
                 <View style={[styles.progressBarFill, { backgroundColor: theme.danger, width: `${cat.percentage}%` }]} />
@@ -277,7 +280,7 @@ export default function ExploreScreen() {
             <View key={cat.name} style={[styles.categoryItem, { backgroundColor: theme.card, borderColor: theme.border }]}>
               <View style={styles.categoryRow}>
                 <Text style={[styles.categoryName, { color: theme.text }]}>{cat.name}</Text>
-                <Text style={[styles.categoryAmount, { color: theme.success }]}>${cat.amount.toFixed(2)}</Text>
+                <Text style={[styles.categoryAmount, { color: theme.success }]}>{currency.symbol} {cat.amount.toLocaleString()}</Text>
               </View>
               <View style={[styles.progressBarBg, { backgroundColor: theme.border }]}>
                 <View style={[styles.progressBarFill, { backgroundColor: theme.success, width: `${cat.percentage}%` }]} />

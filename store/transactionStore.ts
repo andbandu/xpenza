@@ -1,11 +1,13 @@
 import { db } from '@/firebaseConfig';
+import { useAuthStore } from '@/store/authStore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { addDoc, collection, deleteDoc, doc, getDocs, onSnapshot, orderBy, query, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDocs, onSnapshot, query, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 export interface Ledger {
     id: string;
+    userId: string;
     name: string;
     icon: string;
     color: string;
@@ -14,15 +16,16 @@ export interface Ledger {
 
 export interface Transaction {
     id: string;
+    userId: string;
     title: string;
     amount: number;
     date: string; // ISOString or formatted date
     category: string;
     type: 'income' | 'expense';
-    ledgerId: string; // Link to a book
+    ledgerId: string;
     note?: string;
     createdAt?: string;
-    isSyncing?: boolean; // New flag for local-first
+    isSyncing?: boolean;
 }
 
 export interface Category {
@@ -30,27 +33,23 @@ export interface Category {
     name: string;
     icon: string;
     isCustom?: boolean;
-    type?: 'income' | 'expense' | 'both'; // Categories can be specific to transaction type
+    type?: 'income' | 'expense' | 'both';
 }
 
 const DEFAULT_EXPENSE_CATEGORIES: Category[] = [
     { id: 'exp-1', name: 'Food', icon: 'fast-food', type: 'expense' },
     { id: 'exp-2', name: 'Transport', icon: 'car', type: 'expense' },
-    { id: 'exp-3', name: 'Housing', icon: 'home', type: 'expense' },
-    { id: 'exp-4', name: 'Shopping', icon: 'cart', type: 'expense' },
-    { id: 'exp-5', name: 'Entertainment', icon: 'game-controller', type: 'expense' },
-    { id: 'exp-6', name: 'Health', icon: 'medkit', type: 'expense' },
-    { id: 'exp-7', name: 'Education', icon: 'school', type: 'expense' },
-    { id: 'exp-8', name: 'Bills & Utilities', icon: 'receipt', type: 'expense' },
+    { id: 'exp-3', name: 'Shopping', icon: 'cart', type: 'expense' },
+    { id: 'exp-4', name: 'Health', icon: 'heart', type: 'expense' },
+    { id: 'exp-5', name: 'Bills', icon: 'receipt', type: 'expense' },
+    { id: 'exp-6', name: 'Entertainment', icon: 'film', type: 'expense' },
 ];
 
 const DEFAULT_INCOME_CATEGORIES: Category[] = [
     { id: 'inc-1', name: 'Salary', icon: 'cash', type: 'income' },
-    { id: 'inc-2', name: 'Freelance', icon: 'briefcase', type: 'income' },
-    { id: 'inc-3', name: 'Business', icon: 'business', type: 'income' },
-    { id: 'inc-4', name: 'Investment', icon: 'trending-up', type: 'income' },
-    { id: 'inc-5', name: 'Gift', icon: 'gift', type: 'income' },
-    { id: 'inc-6', name: 'Refund', icon: 'return-down-back', type: 'income' },
+    { id: 'inc-2', name: 'Freelance', icon: 'laptop', type: 'income' },
+    { id: 'inc-3', name: 'Investment', icon: 'stats-chart', type: 'income' },
+    { id: 'inc-4', name: 'Gift', icon: 'gift', type: 'income' },
 ];
 
 const DEFAULT_CATEGORIES: Category[] = [
@@ -64,21 +63,13 @@ interface TransactionState {
     categories: Category[];
     ledgers: Ledger[];
     activeLedgerId: string | null;
-
-    // Transaction Actions
-    addTransaction: (transaction: Omit<Transaction, 'id' | 'date' | 'ledgerId'>) => Promise<void>;
-    updateTransaction: (id: string, transaction: Omit<Transaction, 'id' | 'date' | 'ledgerId'>) => Promise<void>;
+    addTransaction: (transaction: Omit<Transaction, 'id' | 'date' | 'ledgerId' | 'userId'>) => Promise<void>;
+    updateTransaction: (id: string, updatedTx: Partial<Omit<Transaction, 'id' | 'userId'>>) => Promise<void>;
     deleteTransaction: (id: string) => Promise<void>;
-
-    // Category Actions
-    addCategory: (name: string, icon: string) => Promise<void>;
-
-    // Ledger Actions
+    addCategory: (name: string, icon: string) => void;
     addLedger: (name: string, icon: string, color: string) => Promise<void>;
     setActiveLedger: (id: string) => void;
     deleteLedger: (id: string) => Promise<void>;
-
-    // Sync/Fetch Actions
     fetchTransactions: () => Promise<void>;
     fetchCategories: () => Promise<void>;
     fetchLedgers: () => Promise<void>;
@@ -97,40 +88,38 @@ export const useTransactionStore = create<TransactionState>()(
 
             addTransaction: async (newTx) => {
                 const activeId = get().activeLedgerId;
-                if (!activeId) return;
+                const user = useAuthStore.getState().user;
+                if (!activeId || !user) return;
 
-                const tempId = Date.now().toString();
-                const txData = {
+                const id = Math.random().toString(36).substring(2, 9);
+                const date = new Date().toISOString();
+                const transaction: Transaction = {
                     ...newTx,
-                    id: tempId,
+                    id,
+                    userId: user.uid,
+                    date,
                     ledgerId: activeId,
-                    date: new Date().toDateString(),
-                    createdAt: new Date().toISOString(),
-                    isSyncing: true
+                    createdAt: date,
+                    isSyncing: true,
                 };
 
-                // Optimistic UI update
-                set((state) => ({
-                    transactions: [txData, ...state.transactions],
-                }));
+                set((state) => ({ transactions: [transaction, ...state.transactions] }));
 
-                // Fire and forget the Firestore sync
                 const syncToFirestore = async () => {
                     try {
-                        const { id, isSyncing, ...firebaseData } = txData;
-                        const docRef = await addDoc(collection(db, 'transactions'), firebaseData);
-
+                        const { isSyncing, id: tempId, ...docData } = transaction;
+                        const docRef = await addDoc(collection(db, 'transactions'), docData);
                         set((state) => ({
-                            transactions: state.transactions.map(t =>
-                                t.id === tempId ? { ...txData, id: docRef.id, isSyncing: false } : t
-                            )
+                            transactions: state.transactions.map((t) =>
+                                t.id === id ? { ...t, id: docRef.id, isSyncing: false } : t
+                            ),
                         }));
                     } catch (error) {
-                        console.error("Error adding transaction to Firestore: ", error);
+                        console.error("Error adding transaction: ", error);
                         set((state) => ({
-                            transactions: state.transactions.map(t =>
-                                t.id === tempId ? { ...t, isSyncing: false, error: true } as any : t
-                            )
+                            transactions: state.transactions.map((t) =>
+                                t.id === id ? { ...t, isSyncing: false } : t
+                            ),
                         }));
                     }
                 };
@@ -139,37 +128,31 @@ export const useTransactionStore = create<TransactionState>()(
             },
 
             updateTransaction: async (id, updatedTx) => {
-                const originalTx = get().transactions.find(t => t.id === id);
-                if (!originalTx) return;
+                const user = useAuthStore.getState().user;
+                if (!user) return;
 
-                const txData = {
-                    ...updatedTx,
-                    id,
-                    ledgerId: originalTx.ledgerId,
-                    date: originalTx.date,
-                    updatedAt: new Date().toISOString(),
-                    isSyncing: true
-                };
-
-                // Optimistic UI update
                 set((state) => ({
                     transactions: state.transactions.map((t) =>
-                        t.id === id ? txData : t
+                        t.id === id ? { ...t, ...updatedTx, isSyncing: true } : t
                     ),
                 }));
 
                 const syncUpdate = async () => {
                     try {
-                        const { isSyncing, ...firebaseData } = txData;
-                        await updateDoc(doc(db, 'transactions', id), firebaseData as any);
-
+                        const txnRef = doc(db, 'transactions', id);
+                        await updateDoc(txnRef, updatedTx);
                         set((state) => ({
-                            transactions: state.transactions.map(t =>
+                            transactions: state.transactions.map((t) =>
                                 t.id === id ? { ...t, isSyncing: false } : t
-                            )
+                            ),
                         }));
                     } catch (error) {
-                        console.error("Error updating transaction in Firestore: ", error);
+                        console.error("Error updating transaction: ", error);
+                        set((state) => ({
+                            transactions: state.transactions.map((t) =>
+                                t.id === id ? { ...t, isSyncing: false } : t
+                            ),
+                        }));
                     }
                 };
 
@@ -177,9 +160,6 @@ export const useTransactionStore = create<TransactionState>()(
             },
 
             deleteTransaction: async (id) => {
-                const originalTransactions = get().transactions;
-
-                // Optimistic UI update
                 set((state) => ({
                     transactions: state.transactions.filter((t) => t.id !== id),
                 }));
@@ -188,96 +168,84 @@ export const useTransactionStore = create<TransactionState>()(
                     try {
                         await deleteDoc(doc(db, 'transactions', id));
                     } catch (error) {
-                        console.error("Error deleting transaction from Firestore: ", error);
-                        set({ transactions: originalTransactions });
+                        console.error("Error deleting transaction: ", error);
                     }
                 };
 
                 syncDelete();
             },
 
-            addCategory: async (name, icon) => {
-                try {
-                    const newCat = { name, icon, isCustom: true };
-                    const docRef = await addDoc(collection(db, 'categories'), newCat);
-
-                    set((state) => ({
-                        categories: [
-                            ...state.categories,
-                            { ...newCat, id: docRef.id }
-                        ]
-                    }));
-                } catch (error) {
-                    console.error("Error adding category: ", error);
-                }
+            addCategory: (name, icon) => {
+                const category: Category = {
+                    id: Math.random().toString(36).substring(2, 9),
+                    name,
+                    icon,
+                    isCustom: true,
+                };
+                set((state) => ({ categories: [...state.categories, category] }));
             },
 
             addLedger: async (name, icon, color) => {
-                const tempId = Date.now().toString();
-                const newLedger = {
-                    id: tempId,
-                    name,
-                    icon,
-                    color,
-                    createdAt: new Date().toISOString()
-                };
+                const user = useAuthStore.getState().user;
+                if (!user) return;
 
-                // Optimistic update
-                set((state) => ({
-                    ledgers: [...state.ledgers, newLedger],
-                    activeLedgerId: state.activeLedgerId || tempId
-                }));
+                const id = Math.random().toString(36).substring(2, 9);
+                const date = new Date().toISOString();
+                const ledger: Ledger = { id, userId: user.uid, name, icon, color, createdAt: date };
 
                 try {
-                    const { id, ...firebaseData } = newLedger;
-                    const docRef = await addDoc(collection(db, 'ledgers'), firebaseData);
+                    const { id: _, ...docData } = ledger;
+                    const docRef = await addDoc(collection(db, 'ledgers'), docData);
+                    const finalLedger = { ...ledger, id: docRef.id };
+                    set((state) => {
+                        // Check if subscription already added this ledger
+                        const exists = state.ledgers.some(l => l.id === docRef.id);
+                        if (exists) return { activeLedgerId: state.activeLedgerId || docRef.id };
 
-                    set((state) => ({
-                        ledgers: state.ledgers.map(l => l.id === tempId ? { ...newLedger, id: docRef.id } : l),
-                        activeLedgerId: state.activeLedgerId === tempId ? docRef.id : state.activeLedgerId
-                    }));
+                        return {
+                            ledgers: [...state.ledgers, finalLedger],
+                            activeLedgerId: state.activeLedgerId || finalLedger.id,
+                        };
+                    });
                 } catch (error) {
                     console.error("Error adding ledger: ", error);
                 }
             },
 
-            setActiveLedger: (id) => {
-                set({ activeLedgerId: id });
-            },
+            setActiveLedger: (id) => set({ activeLedgerId: id }),
 
             deleteLedger: async (id) => {
-                const originalLedgers = get().ledgers;
-                const originalActiveId = get().activeLedgerId;
-
-                // Optimistic delete
-                set((state) => ({
-                    ledgers: state.ledgers.filter(l => l.id !== id),
-                    activeLedgerId: state.activeLedgerId === id ? (state.ledgers.find(l => l.id !== id)?.id || null) : state.activeLedgerId
-                }));
-
                 try {
-                    // Delete ledger document
-                    await deleteDoc(doc(db, 'ledgers', id));
+                    const batch = writeBatch(db);
+                    batch.delete(doc(db, 'ledgers', id));
 
-                    // Also delete associated transactions in background
                     const q = query(collection(db, 'transactions'), where('ledgerId', '==', id));
                     const snapshot = await getDocs(q);
-                    const batch = writeBatch(db);
-                    snapshot.forEach((doc) => batch.delete(doc.ref));
+                    snapshot.forEach((doc) => {
+                        batch.delete(doc.ref);
+                    });
+
                     await batch.commit();
+
+                    set((state) => ({
+                        ledgers: state.ledgers.filter((l) => l.id !== id),
+                        activeLedgerId: state.activeLedgerId === id ? (state.ledgers.find(l => l.id !== id)?.id || null) : state.activeLedgerId,
+                        transactions: state.transactions.filter((t) => t.ledgerId !== id),
+                    }));
                 } catch (error) {
                     console.error("Error deleting ledger: ", error);
-                    set({ ledgers: originalLedgers, activeLedgerId: originalActiveId });
                 }
             },
 
             fetchTransactions: async () => {
                 const activeId = get().activeLedgerId;
-                if (!activeId) return;
+                const user = useAuthStore.getState().user;
+                if (!activeId || !user) return;
 
                 try {
                     const q = query(
                         collection(db, 'transactions'),
+                        where('userId', '==', user.uid),
                         where('ledgerId', '==', activeId)
                     );
                     const querySnapshot = await getDocs(q);
@@ -287,9 +255,7 @@ export const useTransactionStore = create<TransactionState>()(
                         transactions.push({ id: doc.id, ...data } as Transaction);
                     });
 
-                    // Client-side sort to avoid Firestore index requirement
                     transactions.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-
                     set({ transactions });
                 } catch (error) {
                     console.error("Error fetching transactions: ", error);
@@ -297,41 +263,29 @@ export const useTransactionStore = create<TransactionState>()(
             },
 
             fetchCategories: async () => {
-                try {
-                    const querySnapshot = await getDocs(collection(db, 'categories'));
-                    const customCategories: Category[] = [];
-                    querySnapshot.forEach((doc) => {
-                        const data = doc.data();
-                        customCategories.push({
-                            id: doc.id,
-                            name: data.name,
-                            icon: data.icon,
-                            isCustom: true
-                        });
-                    });
-                    set({ categories: [...DEFAULT_CATEGORIES, ...customCategories] });
-                } catch (error) {
-                    console.error("Error fetching categories: ", error);
-                }
+                // Categories are local for now
             },
 
             fetchLedgers: async () => {
+                const user = useAuthStore.getState().user;
+                if (!user) return;
+
                 try {
-                    const q = query(collection(db, 'ledgers'), orderBy('createdAt', 'asc'));
-                    const snapshot = await getDocs(q);
+                    const q = query(
+                        collection(db, 'ledgers'),
+                        where('userId', '==', user.uid)
+                    );
+                    const querySnapshot = await getDocs(q);
                     const ledgers: Ledger[] = [];
-                    snapshot.forEach((doc) => {
-                        ledgers.push({ id: doc.id, ...doc.data() } as Ledger);
+                    querySnapshot.forEach((doc) => {
+                        const data = doc.data();
+                        ledgers.push({ id: doc.id, ...data } as Ledger);
                     });
 
-                    if (ledgers.length > 0) {
-                        set({
-                            ledgers,
-                            activeLedgerId: get().activeLedgerId || ledgers[0].id
-                        });
-                    } else {
-                        await get().initializeLedgers();
-                    }
+                    set((state) => ({
+                        ledgers,
+                        activeLedgerId: state.activeLedgerId || ledgers[0]?.id || null,
+                    }));
                 } catch (error) {
                     console.error("Error fetching ledgers: ", error);
                 }
@@ -339,63 +293,67 @@ export const useTransactionStore = create<TransactionState>()(
 
             subscribeToTransactions: () => {
                 const activeId = get().activeLedgerId;
-                if (!activeId) return () => { };
+                const user = useAuthStore.getState().user;
+                if (!activeId || !user) return () => { };
 
                 const q = query(
                     collection(db, 'transactions'),
+                    where('userId', '==', user.uid),
                     where('ledgerId', '==', activeId)
                 );
 
                 return onSnapshot(q, (snapshot) => {
-                    const transactions: Transaction[] = snapshot.docs.map(doc => ({
-                        id: doc.id,
-                        ...doc.data()
-                    } as Transaction));
+                    const transactions: Transaction[] = [];
+                    snapshot.forEach((doc) => {
+                        const data = doc.data();
+                        transactions.push({ id: doc.id, ...data } as Transaction);
+                    });
 
-                    // Client-side sort to avoid Firestore index requirement
                     transactions.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-
                     set({ transactions });
                 }, (error) => {
-                    console.error("Firestore subscription error: ", error);
+                    console.error("Error in subscription: ", error);
                 });
             },
 
             subscribeToLedgers: () => {
-                const q = query(collection(db, 'ledgers'), orderBy('createdAt', 'asc'));
-                return onSnapshot(q, (snapshot) => {
-                    const ledgers: Ledger[] = snapshot.docs.map(doc => ({
-                        id: doc.id,
-                        ...doc.data()
-                    } as Ledger));
+                const user = useAuthStore.getState().user;
+                if (!user) return () => { };
 
-                    set((state) => {
-                        const newState: Partial<TransactionState> = { ledgers };
-                        if (ledgers.length > 0 && !state.activeLedgerId) {
-                            newState.activeLedgerId = ledgers[0].id;
-                        }
-                        return newState as TransactionState;
+                const q = query(
+                    collection(db, 'ledgers'),
+                    where('userId', '==', user.uid)
+                );
+
+                return onSnapshot(q, (snapshot) => {
+                    const ledgers: Ledger[] = [];
+                    snapshot.forEach((doc) => {
+                        const data = doc.data();
+                        ledgers.push({ id: doc.id, ...data } as Ledger);
                     });
+
+                    set((state) => ({
+                        ledgers,
+                        activeLedgerId: state.activeLedgerId || ledgers[0]?.id || null,
+                    }));
+                }, (error) => {
+                    console.error("Error in subscription: ", error);
                 });
             },
 
             initializeLedgers: async () => {
-                // If no ledgers, create a default "Main Book"
-                if (get().ledgers.length === 0) {
+                const user = useAuthStore.getState().user;
+                if (!user) return;
+
+                const q = query(collection(db, 'ledgers'), where('userId', '==', user.uid));
+                const snapshot = await getDocs(q);
+
+                if (snapshot.empty) {
                     await get().addLedger('Main Book', 'book', '#6366F1');
-
-                    // Migration: Assign any orphaned transactions to the new Main Book
-                    const q = query(collection(db, 'transactions'), where('ledgerId', '==', null));
-                    const snapshot = await getDocs(q);
-                    const mainId = get().activeLedgerId;
-
-                    if (snapshot.size > 0 && mainId) {
-                        const batch = writeBatch(db);
-                        snapshot.forEach((doc) => batch.update(doc.ref, { ledgerId: mainId }));
-                        await batch.commit();
-                    }
+                } else {
+                    get().fetchLedgers();
                 }
-            }
+            },
         }),
         {
             name: 'xpenza-transactions',

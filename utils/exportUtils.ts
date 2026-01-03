@@ -3,16 +3,16 @@ import * as FileSystem from 'expo-file-system';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 
-export const generatePDF = async (ledger: Ledger, transactions: Transaction[]) => {
-    const totalIncome = transactions
-        .filter((t) => t.type === 'income')
-        .reduce((acc, t) => acc + t.amount, 0);
-    const totalExpense = transactions
-        .filter((t) => t.type === 'expense')
-        .reduce((acc, t) => acc + t.amount, 0);
-    const balance = totalIncome - totalExpense;
+export const generatePDF = async (ledger: Ledger, transactions: Transaction[], currencySymbol: string = '$') => {
+  const totalIncome = transactions
+    .filter((t) => t.type === 'income')
+    .reduce((acc, t) => acc + t.amount, 0);
+  const totalExpense = transactions
+    .filter((t) => t.type === 'expense')
+    .reduce((acc, t) => acc + t.amount, 0);
+  const balance = totalIncome - totalExpense;
 
-    const htmlContent = `
+  const htmlContent = `
     <html>
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
@@ -48,15 +48,15 @@ export const generatePDF = async (ledger: Ledger, transactions: Transaction[]) =
         <div class="summary-grid">
           <div class="summary-card">
             <div class="summary-label">Total Income</div>
-            <div class="summary-value income">$${totalIncome.toFixed(2)}</div>
+            <div class="summary-value income">${currencySymbol} ${totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
           </div>
           <div class="summary-card">
             <div class="summary-label">Total Expenses</div>
-            <div class="summary-value expense">$${totalExpense.toFixed(2)}</div>
+            <div class="summary-value expense">${currencySymbol} ${totalExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
           </div>
           <div class="summary-card">
             <div class="summary-label">Net Balance</div>
-            <div class="summary-value">$${balance.toFixed(2)}</div>
+            <div class="summary-value">${currencySymbol} ${balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
           </div>
         </div>
 
@@ -71,19 +71,19 @@ export const generatePDF = async (ledger: Ledger, transactions: Transaction[]) =
           </thead>
           <tbody>
             ${transactions
-            .map(
-                (tx) => `
+      .map(
+        (tx) => `
               <tr>
                 <td>${tx.date}</td>
                 <td>${tx.category}</td>
                 <td>${tx.title}</td>
                 <td style="text-align: right; font-weight: 600; color: ${tx.type === 'income' ? '#10B981' : '#333'}">
-                  ${tx.type === 'income' ? '+' : '-'}$${tx.amount.toFixed(2)}
+                  ${tx.type === 'income' ? '+' : '-'}${currencySymbol} ${tx.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </td>
               </tr>
             `
-            )
-            .join('')}
+      )
+      .join('')}
           </tbody>
         </table>
 
@@ -94,38 +94,38 @@ export const generatePDF = async (ledger: Ledger, transactions: Transaction[]) =
     </html>
   `;
 
-    try {
-        const { uri } = await Print.printToFileAsync({ html: htmlContent });
-        await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
-    } catch (error) {
-        console.error('Error generating PDF:', error);
-        throw error;
-    }
+  try {
+    const { uri } = await Print.printToFileAsync({ html: htmlContent });
+    await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+  } catch (error) {
+    console.error('Error generating PDF:', error);
+    throw error;
+  }
 };
 
-export const generateCSV = async (ledger: Ledger, transactions: Transaction[]) => {
-    const header = 'Date,Category,Description,Type,Amount,Note\n';
-    const rows = transactions
-        .map(
-            (tx) =>
-                `"${tx.date}","${tx.category}","${tx.title}","${tx.type}",${tx.amount},"${tx.note || ''}"`
-        )
-        .join('\n');
+export const generateCSV = async (ledger: Ledger, transactions: Transaction[], currencySymbol: string = '$') => {
+  const header = `Date,Category,Description,Type,Amount (${currencySymbol} ),Note\n`;
+  const rows = transactions
+    .map(
+      (tx) =>
+        `"${tx.date}","${tx.category}","${tx.title}","${tx.type}",${tx.amount},"${tx.note || ''}"`
+    )
+    .join('\n');
 
-    const csvContent = header + rows;
-    const fileName = `${ledger.name.replace(/\s+/g, '_')}_Report.csv`;
-    const fileUri = FileSystem.documentDirectory + fileName;
+  const csvContent = header + rows;
+  const fileName = `${ledger.name.replace(/\s+/g, '_')}_Report.csv`;
+  const fileUri = FileSystem.documentDirectory + fileName;
 
-    try {
-        await FileSystem.writeAsStringAsync(fileUri, csvContent, {
-            encoding: FileSystem.EncodingType.UTF8,
-        });
-        await Sharing.shareAsync(fileUri, {
-            UTI: 'public.comma-separated-values-text',
-            mimeType: 'text/csv',
-        });
-    } catch (error) {
-        console.error('Error generating CSV:', error);
-        throw error;
-    }
+  try {
+    await FileSystem.writeAsStringAsync(fileUri, csvContent, {
+      encoding: FileSystem.EncodingType.UTF8,
+    });
+    await Sharing.shareAsync(fileUri, {
+      UTI: 'public.comma-separated-values-text',
+      mimeType: 'text/csv',
+    });
+  } catch (error) {
+    console.error('Error generating CSV:', error);
+    throw error;
+  }
 };

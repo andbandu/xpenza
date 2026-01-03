@@ -1,5 +1,6 @@
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useSettingsStore } from '@/store/settingsStore';
 import { useTransactionStore } from '@/store/transactionStore';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
@@ -21,6 +22,7 @@ export default function ModalScreen() {
   const transactions = useTransactionStore((state) => state.transactions);
   const activeLedgerId = useTransactionStore((state) => state.activeLedgerId);
   const ledgers = useTransactionStore((state) => state.ledgers);
+  const { currency } = useSettingsStore();
 
   const activeLedger = ledgers.find(l => l.id === activeLedgerId);
 
@@ -160,7 +162,7 @@ export default function ModalScreen() {
         <View style={styles.inputGroup}>
           <Text style={[styles.label, { color: theme.text }]}>Amount</Text>
           <View style={[styles.amountContainer, { borderColor: theme.primary }]}>
-            <Text style={[styles.currencySymbol, { color: theme.primary }]}>$</Text>
+            <Text style={[styles.currencySymbol, { color: theme.primary }]}>{currency.symbol} </Text>
             <TextInput
               style={[styles.amountInput, { color: theme.primary }]}
               value={amount}

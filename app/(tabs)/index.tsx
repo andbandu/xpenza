@@ -1,6 +1,7 @@
 import LedgerSwitcher from '@/components/LedgerSwitcher';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useSettingsStore } from '@/store/settingsStore';
 import { useTransactionStore } from '@/store/transactionStore';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -13,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
+  const { currency } = useSettingsStore();
 
   const {
     transactions,
@@ -96,7 +98,7 @@ export default function HomeScreen() {
               </View>
             </View>
             <Text style={[styles.transactionAmount, { color: item.type === 'expense' ? theme.text : theme.success }]}>
-              {item.type === 'expense' ? '-' : '+'}${item.amount.toFixed(2)}
+              {item.type === 'expense' ? '-' : '+'}{currency.symbol} {item.amount.toLocaleString()}
             </Text>
           </View>
         </Pressable>
@@ -134,7 +136,7 @@ export default function HomeScreen() {
         {/* Total Balance Card */}
         <View style={[styles.balanceCard, { backgroundColor: theme.primary }]}>
           <Text style={styles.balanceLabel}>Total Balance</Text>
-          <Text style={styles.balanceAmount}>${totalBalance.toFixed(2)}</Text>
+          <Text style={styles.balanceAmount}>{currency.symbol} {totalBalance.toLocaleString()}</Text>
           <View style={styles.balanceFooter}>
             <Text style={styles.balanceDate}>{new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</Text>
             {transactions.some(t => t.isSyncing) && (
@@ -154,7 +156,7 @@ export default function HomeScreen() {
             </View>
             <View>
               <Text style={[styles.statLabel, { color: theme.text }]}>Income</Text>
-              <Text style={[styles.statAmount, { color: theme.success }]}>${totalIncome.toFixed(2)}</Text>
+              <Text style={[styles.statAmount, { color: theme.success }]}>{currency.symbol} {totalIncome.toLocaleString()}</Text>
             </View>
           </View>
           <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -163,7 +165,7 @@ export default function HomeScreen() {
             </View>
             <View>
               <Text style={[styles.statLabel, { color: theme.text }]}>Expense</Text>
-              <Text style={[styles.statAmount, { color: theme.danger }]}>${totalExpense.toFixed(2)}</Text>
+              <Text style={[styles.statAmount, { color: theme.danger }]}>{currency.symbol} {totalExpense.toLocaleString()}</Text>
             </View>
           </View>
         </View>
